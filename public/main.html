@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Work Assigner &middot; Main</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Work&nbsp;Assigner</a>
+    <nav class="tabs">
+      <button class="tab" data-tab="workers" type="button">Workers</button>
+      <button class="tab" data-tab="work" type="button">Work Pool</button>
+      <button class="tab" data-tab="meeting" type="button">Assignment Meeting</button>
+      <button class="tab" data-tab="stats" type="button">Stats</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="panel" id="panel-workers" hidden>
+      <h2>Workers</h2>
+      <p class="panel-sub">Add workers to the company with qualifications and a 0&ndash;10 strength rating.</p>
+      <button class="btn primary" data-action="add-worker" type="button">Add a Worker</button>
+    </section>
+
+    <section class="panel" id="panel-work" hidden>
+      <h2>Work Pool</h2>
+      <p class="panel-sub">Queue up tasks with qualifications, physical demand, and progress tracking.</p>
+      <button class="btn primary" data-action="add-work" type="button">Add Work</button>
+    </section>
+
+    <section class="panel" id="panel-meeting" hidden>
+      <h2>Assignment Meeting</h2>
+      <p class="panel-sub">Load unassigned work, scan QR codes, rate desire, and auto-assign.</p>
+      <button class="btn primary" data-action="start-meeting" type="button">Start Meeting</button>
+    </section>
+
+    <section class="panel" id="panel-stats" hidden>
+      <h2>Stats</h2>
+      <p class="panel-sub">See jobs ranked by desire and who ended up with each one.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span id="server-status">Connecting to server&hellip;</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
