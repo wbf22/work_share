@@ -22,13 +22,16 @@ from urllib.parse import unquote, urlparse
 
 HOST = "0.0.0.0"
 PORT = 8082
-VERSION = "0.2"
+VERSION = "0.4"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 IMAGES_DIR = os.path.join(DATA_DIR, "images")
 WORK_FILE = os.path.join(DATA_DIR, "work.json")
+WORKERS_FILE = os.path.join(DATA_DIR, "workers.json")
+GROUPS_FILE = os.path.join(DATA_DIR, "groups.json")
+QUALIFICATIONS_FILE = os.path.join(DATA_DIR, "qualifications.json")
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 IMAGE_TYPES = {
@@ -81,6 +84,78 @@ def save_work(items):
     write_json(WORK_FILE, items)
 
 
+def load_groups():
+    groups = read_json(GROUPS_FILE, [])
+    if not isinstance(groups, list):
+        return []
+    return [g for g in groups if isinstance(g, dict) and clean_text(g.get("name"))]
+
+
+def sync_groups(items):
+    """Rebuild groups.json from the work items.
+
+    Each group is {name, work: [work ids], createdAt, updatedAt}. Groups that
+    no longer have any work items disappear, and the work list is refreshed on
+    every save.
+    """
+    previous = {clean_text(g["name"]): g for g in load_groups()}
+    groups = {}
+    for item in items:
+        name = clean_text(item.get("group"))
+        if not name:
+            continue
+        if name not in groups:
+            prior = previous.get(name, {})
+            groups[name] = {
+                "name": name,
+                "work": [],
+                "createdAt": prior.get("createdAt") or now_iso(),
+                "updatedAt": now_iso(),
+            }
+        groups[name]["work"].append(item.get("id"))
+
+    ordered = [groups[name] for name in sorted(groups, key=str.lower)]
+    write_json(GROUPS_FILE, ordered)
+    return ordered
+
+
+def load_qualifications():
+    quals = read_json(QUALIFICATIONS_FILE, [])
+    if not isinstance(quals, list):
+        return []
+    return [q for q in quals if isinstance(q, dict) and clean_text(q.get("name"))]
+
+
+def sync_qualifications(items):
+    """Rebuild qualifications.json from the work items.
+
+    Each qualification is {name, work: [work ids], createdAt, updatedAt}.
+    Mirrors sync_groups: created on use, updated on change, dropped when its
+    last work item is removed.
+    """
+    previous = {clean_text(q["name"]): q for q in load_qualifications()}
+    quals = {}
+    for item in items:
+        for raw in item.get("qualifications") or []:
+            name = clean_text(raw)
+            if not name:
+                continue
+            if name not in quals:
+                prior = previous.get(name, {})
+                quals[name] = {
+                    "name": name,
+                    "work": [],
+                    "createdAt": prior.get("createdAt") or now_iso(),
+                    "updatedAt": now_iso(),
+                }
+            if item.get("id") not in quals[name]["work"]:
+                quals[name]["work"].append(item.get("id"))
+
+    ordered = [quals[name] for name in sorted(quals, key=str.lower)]
+    write_json(QUALIFICATIONS_FILE, ordered)
+    return ordered
+
+
 def clean_int(value, low, high, default):
     try:
         number = int(round(float(value)))
@@ -131,6 +206,7 @@ def build_work(payload, base=None):
     return {
         "id": base.get("id") or uuid.uuid4().hex[:12],
         "name": clean_text(payload.get("name", base.get("name")), "") or "Untitled work",
+        "group": clean_text(payload.get("group", base.get("group"))),
         "description": clean_text(payload.get("description", base.get("description"))),
         "qualifications": clean_qualifications(
             payload.get("qualifications", base.get("qualifications", []))
@@ -144,7 +220,7 @@ def build_work(payload, base=None):
             payload.get("reassignEachMeeting", base.get("reassignEachMeeting")), False
         ),
         "images": clean_images(payload.get("images", base.get("images", []))),
-        "assignedTo": base.get("assignedTo"),
+        "assignedTo": clean_text(payload.get("assignedTo", base.get("assignedTo"))) or None,
         "createdAt": base.get("createdAt") or now_iso(),
         "updatedAt": now_iso(),
     }
@@ -277,6 +353,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(load_work())
             return True
 
+        if path == "/api/workers" and method == "GET":
+            with _lock:
+                self.send_json(read_json(WORKERS_FILE, []))
+            return True
+
+        if path == "/api/groups" and method == "GET":
+            with _lock:
+                self.send_json(load_groups())
+            return True
+
+        if path == "/api/qualifications" and method == "GET":
+            with _lock:
+                self.send_json(load_qualifications())
+            return True
+
         if path == "/api/work" and method == "POST":
             payload = self.read_json_body()
             if not isinstance(payload, dict):
@@ -287,6 +378,8 @@ class Handler(BaseHTTPRequestHandler):
                 item = build_work(payload)
                 items.append(item)
                 save_work(items)
+                sync_groups(items)
+                sync_qualifications(items)
             self.send_json(item, 201)
             return True
 
@@ -319,6 +412,8 @@ class Handler(BaseHTTPRequestHandler):
                 copy["updatedAt"] = now_iso()
                 items.append(copy)
                 save_work(items)
+                sync_groups(items)
+                sync_qualifications(items)
             self.send_json(copy, 201)
             return True
 
@@ -339,6 +434,8 @@ class Handler(BaseHTTPRequestHandler):
                     updated = build_work(payload, base=existing)
                     items[items.index(existing)] = updated
                     save_work(items)
+                    sync_groups(items)
+                    sync_qualifications(items)
                 self.send_json(updated)
                 return True
             if method == "DELETE":
@@ -350,6 +447,8 @@ class Handler(BaseHTTPRequestHandler):
                         return True
                     items.remove(existing)
                     save_work(items)
+                    sync_groups(items)
+                    sync_qualifications(items)
                 self.send_json({"ok": True})
                 return True
 

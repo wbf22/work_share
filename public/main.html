@@ -56,15 +56,31 @@
         <input name="name" type="text" required maxlength="120" placeholder="e.g. Repaint the west fence" />
       </label>
 
-      <label class="field">
-        <span>Description</span>
-        <textarea name="description" rows="3" placeholder="Any extra details about this job&hellip;"></textarea>
-      </label>
+      <div class="field">
+        <span>Group <em>(optional &mdash; group related work together)</em></span>
+        <div class="combo" id="group-combo">
+          <input name="group" type="text" autocomplete="off" spellcheck="false" maxlength="80"
+                 role="combobox" aria-expanded="false" placeholder="e.g. Gardens" />
+          <div class="combo-menu" role="listbox" hidden></div>
+        </div>
+      </div>
 
-      <label class="field">
-        <span>Qualifications <em>(comma separated)</em></span>
-        <input name="qualifications" type="text" placeholder="e.g. Painting, Ladder, Outdoors" />
-      </label>
+      <div class="field">
+        <span>Description</span>
+        <div id="description-editor" class="rich-editor" contenteditable="true"
+             data-placeholder="Any extra details about this job&hellip;"></div>
+        <span class="hint">Text and pictures live together here &mdash; use &#x29c9; on an attached file to drop it in.</span>
+      </div>
+
+      <div class="field">
+        <span>Qualifications <em>(press Enter to add)</em></span>
+        <div class="tag-input" id="qual-input">
+          <div class="tag-list"></div>
+          <input type="text" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" placeholder="Add a qualification&hellip;" />
+          <div class="combo-menu" role="listbox" hidden></div>
+        </div>
+      </div>
 
       <div class="field-row">
         <label class="field">
@@ -79,13 +95,14 @@
       </div>
 
       <div class="field-row">
-        <label class="field">
+        <div class="field">
           <span>Assignment</span>
-          <select name="autoAssign">
-            <option value="auto">Auto assign</option>
-            <option value="manual">Manual</option>
-          </select>
-        </label>
+          <div class="combo" id="assign-combo">
+            <input name="assignment" type="text" autocomplete="off" spellcheck="false"
+                   role="combobox" aria-expanded="false" placeholder="Auto assign" />
+            <div class="combo-menu" role="listbox" hidden></div>
+          </div>
+        </div>
 
         <label class="field checkbox">
           <input name="reassignEachMeeting" type="checkbox" />
@@ -104,6 +121,14 @@
         <button class="btn primary" type="submit" id="work-save">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="lightbox" class="lightbox">
+    <button type="button" class="lightbox-close" id="lightbox-close" title="Close">&#x2715;</button>
+    <button type="button" class="lightbox-nav prev" id="lightbox-prev" title="Previous">&#x2039;</button>
+    <img id="lightbox-img" alt="attachment" />
+    <button type="button" class="lightbox-nav next" id="lightbox-next" title="Next">&#x203a;</button>
+    <div class="lightbox-count" id="lightbox-count"></div>
   </dialog>
 
   <footer class="footer">
