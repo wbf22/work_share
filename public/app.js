@@ -163,6 +163,12 @@ const WorkAPI = {
     }),
   remove: (id) => api("/api/work/" + id, { method: "DELETE" }),
   duplicate: (id) => api("/api/work/" + id + "/duplicate", { method: "POST" }),
+  markDone: (id, done) =>
+    api("/api/work/" + id + "/done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done }),
+    }),
   listWorkers: () => api("/api/workers"),
   listGroups: () => api("/api/groups"),
   listQualifications: () => api("/api/qualifications"),
@@ -172,6 +178,23 @@ const WorkAPI = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: dataUrl }),
     }),
+};
+
+const WorkerAPI = {
+  list: () => api("/api/workers"),
+  create: (worker) =>
+    api("/api/workers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(worker),
+    }),
+  update: (id, worker) =>
+    api("/api/workers/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(worker),
+    }),
+  remove: (id) => api("/api/workers/" + id, { method: "DELETE" }),
 };
 
 /* ------------------------------------------------------------------ */
@@ -190,6 +213,9 @@ let currentTitle = "";
 let existingImages = [];
 let pendingImages = [];
 const expandedGroups = new Set();
+let allItems = [];
+let poolMode = "active";
+let poolQuery = "";
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -249,17 +275,37 @@ function initLightbox() {
 
 /* ---- list ---- */
 
-function renderWorkList(items) {
+function visibleItems() {
+  const q = poolQuery.trim().toLowerCase();
+  return allItems.filter((item) => {
+    const isActive = !item.done;
+    if (poolMode === "active" && !isActive) return false;
+    if (poolMode === "past" && isActive) return false;
+    if (!q) return true;
+    const haystack = [item.name, item.assignedTo || "", ...(item.qualifications || [])]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+function renderWorkList(items = visibleItems()) {
   workList.replaceChildren();
 
   if (!items.length) {
+    const searching = poolQuery.trim() !== "";
+    const heading = searching
+      ? "No matching work."
+      : poolMode === "past"
+        ? "No completed work yet."
+        : "No active work.";
+    const sub = searching
+      ? "Try a different title, worker, or qualification."
+      : allItems.length
+        ? "Switch modes or add a new job."
+        : "Add your first job to get started.";
     workList.append(
-      el(
-        "div",
-        { class: "empty" },
-        el("p", { text: "No work in the pool yet." }),
-        el("p", { class: "empty-sub", text: "Add your first job to get started." })
-      )
+      el("div", { class: "empty" }, el("p", { text: heading }), el("p", { class: "empty-sub", text: sub }))
     );
     return;
   }
@@ -308,15 +354,19 @@ function renderWorkList(items) {
 }
 
 function renderWorkCard(item) {
-  const card = el("article", { class: "work-item", tabindex: "0", role: "button" });
+  const card = el("article", {
+    class: "work-item" + (item.done ? " is-done" : ""),
+    tabindex: "0",
+    role: "button",
+  });
   const images = item.images || [];
 
   card.addEventListener("click", (event) => {
-    if (event.target.closest(".work-actions")) return;
+    if (event.target.closest("button")) return;
     openDialog(item);
   });
   card.addEventListener("keydown", (event) => {
-    if (event.target.closest(".work-actions")) return;
+    if (event.target.closest("button")) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       openDialog(item);
@@ -336,11 +386,22 @@ function renderWorkCard(item) {
 
   const body = el("div", { class: "work-body" });
 
-  const heading = el("div", { class: "work-heading" });
-  heading.append(el("h3", { text: item.name }));
+  const heading = el("div", { class: "work-heading" },
+    el("h3", { text: item.name }),
+    el("button", {
+      class: "btn tiny" + (item.done ? "" : " primary"),
+      type: "button",
+      title: item.done ? "Reopen this work" : "Mark this work done",
+      onclick: () => toggleDone(item),
+    }, item.done ? "Reopen" : "Mark done")
+  );
   body.append(heading);
 
   const badges = el("div", { class: "badges" });
+  if (item.done) {
+    const when = item.completedAt ? new Date(item.completedAt).toLocaleDateString() : "";
+    badges.append(el("span", { class: "badge done", text: when ? `Done ${when}` : "Done" }));
+  }
   if (item.group) {
     badges.append(el("span", { class: "badge group", text: `\u{1F4C1} ${item.group}` }));
   }
@@ -395,7 +456,8 @@ async function refreshWork() {
     const fromQuals = items.flatMap((i) => i.qualifications || []);
     qualificationNames = [...new Set([...names(serverQuals), ...fromQuals].filter(Boolean))]
       .sort((a, b) => a.localeCompare(b));
-    renderWorkList(items);
+    allItems = items;
+    renderWorkList();
   } catch (err) {
     workList.replaceChildren(el("div", { class: "empty" }, el("p", { class: "err", text: err.message })));
   }
@@ -869,6 +931,15 @@ async function duplicateWork(item) {
   }
 }
 
+async function toggleDone(item) {
+  try {
+    await WorkAPI.markDone(item.id, !item.done);
+    await refreshWork();
+  } catch (err) {
+    alert("Could not update work: " + err.message);
+  }
+}
+
 /* ---- wiring ---- */
 
 function initWorkPool() {
@@ -877,6 +948,34 @@ function initWorkPool() {
   document.getElementById("add-work").addEventListener("click", () => openDialog(null));
   document.getElementById("work-cancel").addEventListener("click", () => dialog.close());
   form.addEventListener("submit", saveWork);
+
+  const modeButtons = document.querySelectorAll("#pool-modes .seg");
+  modeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      poolMode = btn.dataset.mode;
+      modeButtons.forEach((b) => b.classList.toggle("active", b === btn));
+      renderWorkList();
+    });
+  });
+
+  const search = document.getElementById("pool-search");
+  if (search) {
+    search.addEventListener("input", () => {
+      poolQuery = search.value;
+      renderWorkList();
+    });
+  }
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog) return;
+    const box = form.getBoundingClientRect();
+    const onBackdrop =
+      event.clientX < box.left ||
+      event.clientX > box.right ||
+      event.clientY < box.top ||
+      event.clientY > box.bottom;
+    if (onBackdrop) form.requestSubmit();
+  });
 
   const f = form.elements;
   f.physicalDemand.addEventListener("input", updateOutputs);
@@ -920,6 +1019,588 @@ async function loadWorkers() {
 }
 
 /* ------------------------------------------------------------------ */
+/* workers                                                             */
+/* ------------------------------------------------------------------ */
+
+const workerList = document.getElementById("worker-list");
+const workerDialog = document.getElementById("worker-dialog");
+const workerForm = document.getElementById("worker-form");
+const strengthOut = document.getElementById("strength-out");
+
+let allWorkers = [];
+let workerQuery = "";
+let editingWorkerId = null;
+let workerPhoto = "";
+
+const workerQualInput = workerForm
+  ? createTagInput(document.getElementById("worker-qual-input"), {
+      options: () => qualificationNames,
+      onCreate: (v) => {
+        if (!qualificationNames.includes(v)) {
+          qualificationNames.push(v);
+          qualificationNames.sort((a, b) => a.localeCompare(b));
+        }
+      },
+    })
+  : null;
+
+function renderWorkerList() {
+  if (!workerList) return;
+  workerList.replaceChildren();
+
+  const q = workerQuery.trim().toLowerCase();
+  const workers = allWorkers.filter((w) => {
+    if (!q) return true;
+    return [w.name, ...(w.qualifications || [])].join(" ").toLowerCase().includes(q);
+  });
+
+  if (!workers.length) {
+    const searching = q !== "";
+    workerList.append(
+      el("div", { class: "empty" },
+        el("p", { text: searching ? "No matching workers." : "No workers yet." }),
+        el("p", {
+          class: "empty-sub",
+          text: searching ? "Try a different name or qualification." : "Add your first worker to get started.",
+        })
+      )
+    );
+    return;
+  }
+
+  workers.forEach((worker) => workerList.append(renderWorkerCard(worker)));
+}
+
+function renderWorkerCard(worker) {
+  const card = el("article", { class: "work-item", tabindex: "0", role: "button" });
+  card.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    openWorkerDialog(worker);
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.target.closest("button")) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openWorkerDialog(worker);
+    }
+  });
+
+  if (worker.photo) {
+    card.append(
+      el("div", { class: "worker-avatar has-photo" },
+        el("img", { src: worker.photo, alt: worker.name })
+      )
+    );
+  } else {
+    const initial = (worker.name || "?").trim().charAt(0).toUpperCase() || "?";
+    card.append(el("div", { class: "worker-avatar", text: initial }));
+  }
+
+  const body = el("div", { class: "work-body" });
+  body.append(el("div", { class: "work-heading" }, el("h3", { text: worker.name })));
+
+  const badges = el("div", { class: "badges" });
+  badges.append(el("span", { class: "badge", text: `Physical capacity ${worker.strength}/10` }));
+  (worker.qualifications || []).forEach((q) => {
+    badges.append(el("span", { class: "badge qual", text: q }));
+  });
+  body.append(badges);
+
+  const foot = el("div", { class: "work-foot" });
+  foot.append(
+    el("div", { class: "work-actions" },
+      el("button", { class: "btn small", type: "button", onclick: () => openWorkerDialog(worker) }, "Edit / View"),
+      el("button", { class: "btn small danger", type: "button", onclick: () => deleteWorker(worker) }, "Delete")
+    )
+  );
+  body.append(foot);
+
+  card.append(body);
+  return card;
+}
+
+function updateStrengthOutput() {
+  if (strengthOut && workerForm) strengthOut.textContent = workerForm.elements.strength.value;
+}
+
+function renderWorkerPhoto() {
+  const box = document.getElementById("worker-photo-preview");
+  if (!box) return;
+  box.replaceChildren();
+
+  if (!workerPhoto) {
+    box.append(el("span", { class: "empty-sub", text: "No picture yet." }));
+    return;
+  }
+
+  const tile = el("div", { class: "preview-tile" });
+  tile.append(
+    el("img", {
+      src: workerPhoto,
+      alt: "worker photo",
+      class: "preview-img",
+      title: "View",
+      onclick: () => openLightbox([workerPhoto], 0, workerForm.elements.name.value),
+    })
+  );
+  const actions = el("div", { class: "preview-actions" });
+  actions.append(
+    el("button", {
+      type: "button",
+      class: "preview-btn remove",
+      title: "Remove picture",
+      onclick: () => {
+        workerPhoto = "";
+        renderWorkerPhoto();
+      },
+    }, "\u2715")
+  );
+  tile.append(actions);
+  box.append(tile);
+}
+
+function openWorkerDialog(worker) {
+  editingWorkerId = worker ? worker.id : null;
+  workerForm.reset();
+  document.getElementById("worker-dialog-title").textContent = worker ? "Edit Worker" : "Add Worker";
+
+  const f = workerForm.elements;
+  if (worker) {
+    f.name.value = worker.name || "";
+    f.strength.value = worker.strength;
+    workerQualInput.set(worker.qualifications || []);
+    workerPhoto = worker.photo || "";
+  } else {
+    f.strength.value = 5;
+    workerQualInput.set([]);
+    workerPhoto = "";
+  }
+  updateStrengthOutput();
+  renderWorkerPhoto();
+  workerDialog.showModal();
+}
+
+async function saveWorker(event) {
+  event.preventDefault();
+  const saveBtn = document.getElementById("worker-save");
+  const f = workerForm.elements;
+  const payload = {
+    name: f.name.value.trim(),
+    strength: Number(f.strength.value),
+    qualifications: workerQualInput.values,
+    photo: workerPhoto || null,
+  };
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Saving\u2026";
+  try {
+    if (editingWorkerId) await WorkerAPI.update(editingWorkerId, payload);
+    else await WorkerAPI.create(payload);
+    workerDialog.close();
+    await refreshWorkers();
+    await loadWorkers();
+    await refreshWork();
+  } catch (err) {
+    alert("Could not save: " + err.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save";
+  }
+}
+
+async function deleteWorker(worker) {
+  if (!confirm(`Delete "${worker.name}"?`)) return;
+  try {
+    await WorkerAPI.remove(worker.id);
+    await refreshWorkers();
+    await loadWorkers();
+    await refreshWork();
+  } catch (err) {
+    alert("Could not delete: " + err.message);
+  }
+}
+
+async function refreshWorkers() {
+  if (!workerList) return;
+  try {
+    allWorkers = await WorkerAPI.list();
+    const fromWorkers = allWorkers.flatMap((w) => w.qualifications || []);
+    qualificationNames = [...new Set([...qualificationNames, ...fromWorkers])]
+      .sort((a, b) => a.localeCompare(b));
+    renderWorkerList();
+  } catch (err) {
+    workerList.replaceChildren(el("div", { class: "empty" }, el("p", { class: "err", text: err.message })));
+  }
+}
+
+function initWorkers() {
+  if (!workerList) return;
+
+  document.getElementById("add-worker").addEventListener("click", () => openWorkerDialog(null));
+  document.getElementById("worker-cancel").addEventListener("click", () => workerDialog.close());
+  workerForm.addEventListener("submit", saveWorker);
+  workerForm.elements.strength.addEventListener("input", updateStrengthOutput);
+
+  workerForm.elements.workerImage.addEventListener("change", async (event) => {
+    const file = (event.target.files || [])[0];
+    event.target.value = "";
+    if (!file) return;
+    const box = document.getElementById("worker-photo-preview");
+    box.replaceChildren(el("span", { class: "empty-sub", text: "Uploading\u2026" }));
+    try {
+      const { url } = await WorkAPI.uploadImage(await fileToDataUrl(file));
+      workerPhoto = url;
+    } catch (err) {
+      alert("Could not upload picture: " + err.message);
+    }
+    renderWorkerPhoto();
+  });
+
+  const search = document.getElementById("worker-search");
+  if (search) {
+    search.addEventListener("input", () => {
+      workerQuery = search.value;
+      renderWorkerList();
+    });
+  }
+
+  workerDialog.addEventListener("click", (event) => {
+    if (event.target !== workerDialog) return;
+    const box = workerForm.getBoundingClientRect();
+    const onBackdrop =
+      event.clientX < box.left ||
+      event.clientX > box.right ||
+      event.clientY < box.top ||
+      event.clientY > box.bottom;
+    if (onBackdrop) workerForm.requestSubmit();
+  });
+
+  refreshWorkers();
+}
+
+/* ------------------------------------------------------------------ */
+/* assignment meeting                                                  */
+/* ------------------------------------------------------------------ */
+
+const MeetingAPI = {
+  list: () => api("/api/meetings"),
+  create: (opts) =>
+    api("/api/meetings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts || {}),
+    }),
+  get: (id) => api("/api/meetings/" + id),
+  assign: (id) => api("/api/meetings/" + id + "/assign", { method: "POST" }),
+  stats: (id) => api("/api/meetings/" + id + "/stats"),
+  remove: (id) => api("/api/meetings/" + id, { method: "DELETE" }),
+};
+
+const meetingEmpty = document.getElementById("meeting-empty");
+const meetingActive = document.getElementById("meeting-active");
+const meetingQr = document.getElementById("meeting-qr");
+const meetingLink = document.getElementById("meeting-link");
+const meetingProgress = document.getElementById("meeting-progress");
+const meetingCount = document.getElementById("meeting-count");
+const meetingResults = document.getElementById("meeting-results");
+const meetingMaxOut = document.getElementById("meeting-max-out");
+const statsList = document.getElementById("stats-list");
+
+let currentMeeting = null;
+let meetingPoll = null;
+let lastStats = null;
+
+function meetingUrl(id) {
+  return `${location.origin}/rate.html?session=${encodeURIComponent(id)}`;
+}
+
+function renderQr(container, text) {
+  if (!container) return;
+  container.replaceChildren();
+  let qr;
+  try {
+    qr = QR.generate(text, "M");
+  } catch (err) {
+    container.append(el("p", { class: "err", text: "That link is too long to encode." }));
+    return;
+  }
+  const quiet = 4;
+  const total = qr.size + quiet * 2;
+  const scale = Math.max(2, Math.floor(260 / total));
+  const px = total * scale;
+  const canvas = el("canvas", { class: "qr-canvas", width: px, height: px });
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, px, px);
+  ctx.fillStyle = "#000000";
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.modules[y][x]) ctx.fillRect((x + quiet) * scale, (y + quiet) * scale, scale, scale);
+    }
+  }
+  container.append(canvas);
+}
+
+function workerAvatar(worker, size) {
+  if (worker.photo) {
+    return el("div", { class: "worker-avatar" + (size ? " " + size : "") },
+      el("img", { src: worker.photo, alt: worker.name }));
+  }
+  const initial = (worker.name || "?").trim().charAt(0).toUpperCase() || "?";
+  return el("div", { class: "worker-avatar" + (size ? " " + size : ""), text: initial });
+}
+
+function renderMeetingProgress(meeting) {
+  meetingProgress.replaceChildren();
+  const workers = meeting.workers || [];
+  const submitted = new Set(meeting.submitted || []);
+  meetingCount.textContent = `${submitted.size}/${workers.length} rated`;
+
+  if (!workers.length) {
+    meetingProgress.append(el("p", { class: "empty-sub", text: "No workers yet." }));
+    return;
+  }
+
+  workers.forEach((worker) => {
+    const row = el("div", { class: "progress-row" + (submitted.has(worker.id) ? " done" : "") });
+    row.append(workerAvatar(worker, "small"));
+    row.append(el("span", { class: "progress-name", text: worker.name }));
+    const rated = Object.keys((meeting.ratings || {})[worker.id] || {}).length;
+    row.append(el("span", {
+      class: "badge" + (submitted.has(worker.id) ? " done" : ""),
+      text: submitted.has(worker.id) ? `${rated} rated` : "Waiting",
+    }));
+    meetingProgress.append(row);
+  });
+}
+
+function renderMeetingResults(stats) {
+  if (!meetingResults) return;
+  if (!stats || !stats.length) {
+    meetingResults.hidden = true;
+    return;
+  }
+  meetingResults.hidden = false;
+  meetingResults.replaceChildren(el("h3", { text: "Assignments" }));
+
+  const list = el("div", { class: "assign-list" });
+  stats.forEach((row) => {
+    const item = el("div", { class: "assign-row" });
+    item.append(el("span", { class: "assign-name", text: row.name }));
+    item.append(
+      el("span", {
+        class: "badge " + (row.assignedTo ? "auto" : ""),
+        text: row.assignedTo || "Unassigned",
+      })
+    );
+    const desire = row.avgDesire == null ? "\u2014" : row.avgDesire.toFixed(1);
+    item.append(el("span", { class: "assign-desire", text: `desire ${desire}` }));
+    list.append(item);
+  });
+  meetingResults.append(list);
+}
+
+function renderMeeting() {
+  const has = !!currentMeeting;
+  meetingEmpty.hidden = has;
+  meetingActive.hidden = !has;
+  document.getElementById("meeting-new").hidden = !has;
+  document.getElementById("meeting-assign").hidden = !has;
+  if (!has) return;
+
+  const url = meetingUrl(currentMeeting.id);
+  meetingLink.href = url;
+  meetingLink.textContent = url;
+  renderQr(meetingQr, url);
+  renderMeetingProgress(currentMeeting);
+  renderMeetingResults(currentMeeting.status === "assigned" ? lastStats : null);
+}
+
+function stopMeetingPoll() {
+  if (meetingPoll) {
+    clearInterval(meetingPoll);
+    meetingPoll = null;
+  }
+}
+
+function startMeetingPoll() {
+  stopMeetingPoll();
+  meetingPoll = setInterval(async () => {
+    if (!currentMeeting) return;
+    try {
+      const fresh = await MeetingAPI.get(currentMeeting.id);
+      currentMeeting = fresh;
+      renderMeeting();
+    } catch (err) {
+      /* keep polling quietly */
+    }
+  }, 3000);
+}
+
+async function refreshMeeting() {
+  if (!currentMeeting) return;
+  try {
+    currentMeeting = await MeetingAPI.get(currentMeeting.id);
+    if (currentMeeting.status === "assigned") {
+      try {
+        lastStats = (await MeetingAPI.stats(currentMeeting.id)).stats;
+      } catch (err) {
+        lastStats = null;
+      }
+    }
+    renderMeeting();
+  } catch (err) {
+    currentMeeting = null;
+    stopMeetingPoll();
+    renderMeeting();
+  }
+}
+
+async function startMeeting() {
+  const btn = document.getElementById("meeting-start");
+  btn.disabled = true;
+  btn.textContent = "Starting\u2026";
+  try {
+    const meeting = await MeetingAPI.create({
+      maxPerWorker: Number(document.getElementById("meeting-max").value),
+    });
+    currentMeeting = meeting;
+    lastStats = null;
+    renderMeeting();
+    startMeetingPoll();
+  } catch (err) {
+    alert("Could not start meeting: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Start Meeting";
+  }
+}
+
+async function runAssign() {
+  if (!currentMeeting) return;
+  if (!confirm("Auto-assign all the reviewed work now?")) return;
+  const btn = document.getElementById("meeting-assign");
+  btn.disabled = true;
+  btn.textContent = "Assigning\u2026";
+  try {
+    const result = await MeetingAPI.assign(currentMeeting.id);
+    lastStats = result.stats;
+    await refreshMeeting();
+    await refreshWork();
+    await loadWorkers();
+  } catch (err) {
+    alert("Could not assign work: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Auto Assign";
+  }
+}
+
+async function newMeeting() {
+  if (currentMeeting) {
+    if (!confirm("Discard this meeting and start a new one?")) return;
+    try {
+      await MeetingAPI.remove(currentMeeting.id);
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  currentMeeting = null;
+  lastStats = null;
+  stopMeetingPoll();
+  renderMeeting();
+}
+
+function initMeeting() {
+  if (!meetingEmpty) return;
+
+  const maxSlider = document.getElementById("meeting-max");
+  maxSlider.addEventListener("input", () => (meetingMaxOut.textContent = maxSlider.value));
+
+  document.getElementById("meeting-start").addEventListener("click", startMeeting);
+  document.getElementById("meeting-new").addEventListener("click", newMeeting);
+  document.getElementById("meeting-assign").addEventListener("click", runAssign);
+
+  const meetingTab = document.querySelector('.tab[data-tab="meeting"]');
+  if (meetingTab) meetingTab.addEventListener("click", () => { if (currentMeeting) refreshMeeting(); });
+
+  renderMeeting();
+}
+
+/* ------------------------------------------------------------------ */
+/* stats                                                               */
+/* ------------------------------------------------------------------ */
+
+function renderStats(stats) {
+  if (!statsList) return;
+  statsList.replaceChildren();
+
+  if (!stats || !stats.length) {
+    statsList.append(
+      el("div", { class: "empty" },
+        el("p", { text: "No results yet." }),
+        el("p", { class: "empty-sub", text: "Run an assignment meeting and the rankings will appear here." })
+      )
+    );
+    return;
+  }
+
+  stats.forEach((row, index) => {
+    const card = el("article", { class: "stat-row" });
+    card.append(el("span", { class: "stat-rank", text: index + 1 }));
+
+    const body = el("div", { class: "work-body" });
+    body.append(el("div", { class: "work-heading" }, el("h3", { text: row.name })));
+
+    const badges = el("div", { class: "badges" });
+    const desire = row.avgDesire == null ? "\u2014" : row.avgDesire.toFixed(1);
+    badges.append(el("span", { class: "badge", text: `Desire ${desire}` }));
+    badges.append(el("span", { class: "badge", text: `Demand ${row.physicalDemand}/10` }));
+    badges.append(
+      el("span", { class: "badge " + (row.assignedTo ? "auto" : ""), text: row.assignedTo || "Unassigned" })
+    );
+    (row.qualifications || []).forEach((q) => badges.append(el("span", { class: "badge qual", text: q })));
+    body.append(badges);
+
+    if (row.ratings && row.ratings.length) {
+      const chips = el("div", { class: "rating-chips" });
+      row.ratings.forEach((entry) => {
+        chips.append(el("span", { class: "rating-chip", text: `${entry.worker}: ${entry.score}` }));
+      });
+      body.append(chips);
+    }
+
+    card.append(body);
+    statsList.append(card);
+  });
+}
+
+async function loadStats() {
+  if (!statsList) return;
+  statsList.replaceChildren(el("div", { class: "empty" }, el("p", { class: "empty-sub", text: "Loading\u2026" })));
+  try {
+    const meetings = await MeetingAPI.list();
+    const done = meetings.find((m) => m.status === "assigned");
+    if (!done) {
+      renderStats([]);
+      return;
+    }
+    const { stats } = await MeetingAPI.stats(done.id);
+    renderStats(stats);
+  } catch (err) {
+    statsList.replaceChildren(el("div", { class: "empty" }, el("p", { class: "err", text: err.message })));
+  }
+}
+
+function initStats() {
+  if (!statsList) return;
+  const refresh = document.getElementById("stats-refresh");
+  if (refresh) refresh.addEventListener("click", loadStats);
+  const statsTab = document.querySelector('.tab[data-tab="stats"]');
+  if (statsTab) statsTab.addEventListener("click", loadStats);
+}
+
+/* ------------------------------------------------------------------ */
 /* server status                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -935,11 +1616,10 @@ async function checkServer() {
   }
 }
 
-document.querySelectorAll("[data-action]").forEach((btn) => {
-  btn.addEventListener("click", () => alert(`Coming soon: ${btn.dataset.action}`));
-});
-
 initTabs();
 initLightbox();
 initWorkPool();
+initWorkers();
+initMeeting();
+initStats();
 checkServer();

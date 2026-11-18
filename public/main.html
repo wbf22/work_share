@@ -19,9 +19,18 @@
 
   <main>
     <section class="panel" id="panel-workers" hidden>
-      <h2>Workers</h2>
-      <p class="panel-sub">Add workers to the company with qualifications and a 0&ndash;10 strength rating.</p>
-      <button class="btn primary" data-action="add-worker" type="button">Add a Worker</button>
+      <div class="panel-head">
+        <div>
+          <h2>Workers</h2>
+          <p class="panel-sub">Add workers to the company with a picture, qualifications, and a 0&ndash;10 physical capacity rating.</p>
+        </div>
+        <button class="btn primary" id="add-worker" type="button">+ Add Worker</button>
+      </div>
+      <div class="pool-controls">
+        <input id="worker-search" class="pool-search" type="search"
+               placeholder="Search name or qualification&hellip;" />
+      </div>
+      <div id="worker-list" class="work-list" aria-live="polite"></div>
     </section>
 
     <section class="panel" id="panel-work" hidden>
@@ -32,18 +41,66 @@
         </div>
         <button class="btn primary" id="add-work" type="button">+ Add Work</button>
       </div>
+      <div class="pool-controls">
+        <div class="segmented" id="pool-modes">
+          <button class="seg active" data-mode="active" type="button">Active</button>
+          <button class="seg" data-mode="past" type="button">Past</button>
+        </div>
+        <input id="pool-search" class="pool-search" type="search"
+               placeholder="Search title, worker, or qualification&hellip;" />
+      </div>
       <div id="work-list" class="work-list" aria-live="polite"></div>
     </section>
 
     <section class="panel" id="panel-meeting" hidden>
-      <h2>Assignment Meeting</h2>
-      <p class="panel-sub">Load unassigned work, scan QR codes, rate desire, and auto-assign.</p>
-      <button class="btn primary" data-action="start-meeting" type="button">Start Meeting</button>
+      <div class="panel-head">
+        <div>
+          <h2>Assignment Meeting</h2>
+          <p class="panel-sub">Load unassigned work, let workers rate on their phones, then auto-assign.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" id="meeting-new" type="button" hidden>New Meeting</button>
+          <button class="btn primary" id="meeting-assign" type="button" hidden>Run Auto Assign</button>
+        </div>
+      </div>
+
+      <div id="meeting-empty" class="meeting-card meeting-start">
+        <h3>Start a meeting</h3>
+        <p class="empty-sub">This snapshots all unassigned work so workers can rate it.</p>
+        <label class="field">
+          <span>Tasks each worker reviews <output id="meeting-max-out">5</output></span>
+          <input id="meeting-max" type="range" min="1" max="20" step="1" value="5" />
+        </label>
+        <p class="hint">Assignments walk the workers from lowest to highest capacity. Each capacity level claims the work within its reach, and anything left carries up to the next level.</p>
+        <button class="btn primary" id="meeting-start" type="button">Start Meeting</button>
+      </div>
+
+      <div id="meeting-active" hidden>
+        <div class="meeting-grid">
+          <div class="meeting-card">
+            <h3>Scan to rate</h3>
+            <div id="meeting-qr" class="qr-box"></div>
+            <p class="meeting-url"><a id="meeting-link" href="#" target="_blank" rel="noopener"></a></p>
+            <p class="hint">Phones must be on the same network. If the code won&rsquo;t open, load this page using the machine&rsquo;s network address instead of localhost.</p>
+          </div>
+          <div class="meeting-card">
+            <h3>Who has rated <span id="meeting-count" class="badge"></span></h3>
+            <div id="meeting-progress" class="meeting-progress"></div>
+          </div>
+        </div>
+        <div id="meeting-results" hidden></div>
+      </div>
     </section>
 
     <section class="panel" id="panel-stats" hidden>
-      <h2>Stats</h2>
-      <p class="panel-sub">See jobs ranked by desire and who ended up with each one.</p>
+      <div class="panel-head">
+        <div>
+          <h2>Stats</h2>
+          <p class="panel-sub">Jobs from most to least desired, and who ended up with each one.</p>
+        </div>
+        <button class="btn" id="stats-refresh" type="button">Refresh</button>
+      </div>
+      <div id="stats-list" class="stats-list" aria-live="polite"></div>
     </section>
   </main>
 
@@ -123,6 +180,44 @@
     </form>
   </dialog>
 
+  <dialog id="worker-dialog" class="work-dialog">
+    <form id="worker-form">
+      <h2 id="worker-dialog-title">Add Worker</h2>
+
+      <label class="field">
+        <span>Name</span>
+        <input name="name" type="text" required maxlength="120" placeholder="e.g. Alex Rivera" />
+      </label>
+
+      <div class="field">
+        <span>Qualifications <em>(press Enter to add)</em></span>
+        <div class="tag-input" id="worker-qual-input">
+          <div class="tag-list"></div>
+          <input type="text" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" placeholder="Add a qualification&hellip;" />
+          <div class="combo-menu" role="listbox" hidden></div>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Physical capacity <output id="strength-out">5</output></span>
+        <input name="strength" type="range" min="0" max="10" step="1" value="5" />
+        <span class="hint">How much physical demand this worker is up for (0&ndash;10). Used to match demanding tasks.</span>
+      </label>
+
+      <div class="field">
+        <span>Picture</span>
+        <input name="workerImage" type="file" accept="image/*" />
+        <div id="worker-photo-preview" class="image-preview"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="btn" type="button" id="worker-cancel">Cancel</button>
+        <button class="btn primary" type="submit" id="worker-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="lightbox" class="lightbox">
     <button type="button" class="lightbox-close" id="lightbox-close" title="Close">&#x2715;</button>
     <button type="button" class="lightbox-nav prev" id="lightbox-prev" title="Previous">&#x2039;</button>
@@ -135,6 +230,7 @@
     <span id="server-status">Connecting to server&hellip;</span>
   </footer>
 
+  <script src="qrcode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

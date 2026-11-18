@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rate Work &middot; Work Assigner</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="rate-body">
+  <header class="rate-header">
+    <span class="brand">Work&nbsp;Assigner</span>
+    <span class="rate-sub">Work Assignment Meeting</span>
+  </header>
+
+  <main class="rate-main">
+    <section id="rate-pick">
+      <h1>Who are you?</h1>
+      <p class="panel-sub">Tap your name to start rating.</p>
+      <div id="worker-picker" class="picker"></div>
+    </section>
+
+    <section id="rate-items" hidden>
+      <div class="rate-topbar">
+        <button class="btn" id="rate-back" type="button">&larr; Not you?</button>
+        <span id="rate-who" class="rate-who"></span>
+      </div>
+      <h1>How much do you want each job?</h1>
+      <p class="panel-sub">0 = really rather not, 10 = yes please. Leaving one alone keeps it neutral.</p>
+      <div id="item-list" class="rate-list"></div>
+      <div class="rate-actions">
+        <button class="btn primary" id="rate-submit" type="button">Submit ratings</button>
+      </div>
+    </section>
+
+    <section id="rate-done" hidden>
+      <h1>Thanks!</h1>
+      <p class="panel-sub">Your ratings are in. You can close this page.</p>
+      <button class="btn" id="rate-again" type="button">Rate again</button>
+    </section>
+
+    <section id="rate-error" hidden>
+      <h1>Hmm</h1>
+      <p id="rate-error-msg" class="panel-sub"></p>
+    </section>
+  </main>
+
+  <script src="rate.js"></script>
+</body>
+</html>
