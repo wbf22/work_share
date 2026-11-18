@@ -25,9 +25,14 @@
     </section>
 
     <section class="panel" id="panel-work" hidden>
-      <h2>Work Pool</h2>
-      <p class="panel-sub">Queue up tasks with qualifications, physical demand, and progress tracking.</p>
-      <button class="btn primary" data-action="add-work" type="button">Add Work</button>
+      <div class="panel-head">
+        <div>
+          <h2>Work Pool</h2>
+          <p class="panel-sub">Queue up tasks with qualifications, physical demand, and progress tracking.</p>
+        </div>
+        <button class="btn primary" id="add-work" type="button">+ Add Work</button>
+      </div>
+      <div id="work-list" class="work-list" aria-live="polite"></div>
     </section>
 
     <section class="panel" id="panel-meeting" hidden>
@@ -41,6 +46,65 @@
       <p class="panel-sub">See jobs ranked by desire and who ended up with each one.</p>
     </section>
   </main>
+
+  <dialog id="work-dialog" class="work-dialog">
+    <form id="work-form">
+      <h2 id="work-dialog-title">Add Work</h2>
+
+      <label class="field">
+        <span>Name</span>
+        <input name="name" type="text" required maxlength="120" placeholder="e.g. Repaint the west fence" />
+      </label>
+
+      <label class="field">
+        <span>Description</span>
+        <textarea name="description" rows="3" placeholder="Any extra details about this job&hellip;"></textarea>
+      </label>
+
+      <label class="field">
+        <span>Qualifications <em>(comma separated)</em></span>
+        <input name="qualifications" type="text" placeholder="e.g. Painting, Ladder, Outdoors" />
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Physical demand <output id="demand-out">5</output></span>
+          <input name="physicalDemand" type="range" min="0" max="10" step="1" value="5" />
+        </label>
+
+        <label class="field">
+          <span>Progress <output id="progress-out">0%</output></span>
+          <input name="progress" type="range" min="0" max="100" step="5" value="0" />
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Assignment</span>
+          <select name="autoAssign">
+            <option value="auto">Auto assign</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+
+        <label class="field checkbox">
+          <input name="reassignEachMeeting" type="checkbox" />
+          <span>Reassign each meeting</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span>Pictures</span>
+        <input name="images" type="file" accept="image/*" multiple />
+        <div id="image-preview" class="image-preview"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="btn" type="button" id="work-cancel">Cancel</button>
+        <button class="btn primary" type="submit" id="work-save">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <footer class="footer">
     <span id="server-status">Connecting to server&hellip;</span>
