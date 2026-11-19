@@ -80,7 +80,9 @@ function pickItems(w) {
 
 function renderPicker() {
   pickerEl.replaceChildren();
-  const workers = meeting.workers || [];
+  const workers = (meeting.workers || [])
+    .slice()
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }));
   if (!workers.length) {
     fail("There are no workers in this meeting yet.");
     return;

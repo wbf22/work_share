@@ -29,6 +29,10 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+function byName(a, b) {
+  return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+}
+
 /* ------------------------------------------------------------------ */
 /* rich text (description with embedded images)                        */
 /* ------------------------------------------------------------------ */
@@ -291,6 +295,7 @@ function visibleItems() {
 
 function renderWorkList(items = visibleItems()) {
   workList.replaceChildren();
+  items = items.slice().sort(byName);
 
   if (!items.length) {
     const searching = poolQuery.trim() !== "";
@@ -1012,7 +1017,8 @@ async function loadWorkers() {
     const list = await WorkAPI.listWorkers();
     workerNames = (list || [])
       .map((w) => (typeof w === "string" ? w : w && w.name))
-      .filter(Boolean);
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   } catch (err) {
     workerNames = [];
   }
@@ -1049,10 +1055,12 @@ function renderWorkerList() {
   workerList.replaceChildren();
 
   const q = workerQuery.trim().toLowerCase();
-  const workers = allWorkers.filter((w) => {
-    if (!q) return true;
-    return [w.name, ...(w.qualifications || [])].join(" ").toLowerCase().includes(q);
-  });
+  const workers = allWorkers
+    .filter((w) => {
+      if (!q) return true;
+      return [w.name, ...(w.qualifications || [])].join(" ").toLowerCase().includes(q);
+    })
+    .sort(byName);
 
   if (!workers.length) {
     const searching = q !== "";
@@ -1352,7 +1360,7 @@ function workerAvatar(worker, size) {
 
 function renderMeetingProgress(meeting) {
   meetingProgress.replaceChildren();
-  const workers = meeting.workers || [];
+  const workers = (meeting.workers || []).slice().sort(byName);
   const submitted = new Set(meeting.submitted || []);
   meetingCount.textContent = `${submitted.size}/${workers.length} rated`;
 

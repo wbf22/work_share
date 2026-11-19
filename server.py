@@ -23,7 +23,7 @@ from urllib.parse import unquote, urlparse
 
 HOST = "0.0.0.0"
 PORT = 8082
-VERSION = "0.9"
+VERSION = "0.10"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
@@ -327,7 +327,7 @@ def unassigned_items(items):
 
 def build_meeting(payload, work, workers):
     payload = payload or {}
-    work_snapshot = [
+    work_snapshot = sort_by_name([
         {
             "id": i.get("id"),
             "name": clean_text(i.get("name"), "Untitled work"),
@@ -336,8 +336,8 @@ def build_meeting(payload, work, workers):
             "physicalDemand": clean_int(i.get("physicalDemand"), 0, 10, 5),
         }
         for i in unassigned_items(work)
-    ]
-    worker_snapshot = [
+    ])
+    worker_snapshot = sort_by_name([
         {
             "id": w.get("id"),
             "name": clean_text(w.get("name"), "Unnamed worker"),
@@ -346,7 +346,7 @@ def build_meeting(payload, work, workers):
             "photo": w.get("photo"),
         }
         for w in workers
-    ]
+    ])
     return {
         "id": uuid.uuid4().hex[:8],
         "status": "open",
